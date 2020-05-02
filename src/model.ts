@@ -184,10 +184,10 @@ class Model {
   private ksLoc: number = 0;
   private nsLoc: number = 0;
   private illumLoc: number = 0;
-  private diffuseColorLoc: number = 0;
-  private specularColorLoc: number = 0;
-  private bumpLoc: number = 0;
-  private mapStatusLoc: number = 0;
+  private mapKdLoc: number = 0;
+  private mapKsLoc: number = 0;
+  private mapBumpLoc: number = 0;
+  private mapFlagsLoc: number = 0;
 
   constructor(gl: WebGL2RenderingContext, modelUrl: string) {
     this.gl = gl;
@@ -210,7 +210,7 @@ class Model {
     this.indicesGroups = indicesGroup;
     this.attributes = [
       { name: 'a_Pos', size: 3, stride: 8, offset: 0 },
-      { name: 'tex_Coord', size: 2, stride: 8, offset: 3 },
+      { name: 'a_TexCoord', size: 2, stride: 8, offset: 3 },
       { name: 'a_Norm', size: 3, stride: 8, offset: 5 },
     ];
 
@@ -243,6 +243,8 @@ class Model {
       this.mIndices.push(mIndex);
     }
 
+    console.log(this.materials);
+
     console.log('load model finished...');
   }
 
@@ -257,10 +259,10 @@ class Model {
     this.ksLoc = gl.getUniformLocation(shader.program, 'Ks') as number;
     this.nsLoc = gl.getUniformLocation(shader.program, 'Ns') as number;
     this.illumLoc = gl.getUniformLocation(shader.program, 'illum') as number;
-    this.diffuseColorLoc = gl.getUniformLocation(shader.program, 'diffuseColor') as number;
-    this.specularColorLoc = gl.getUniformLocation(shader.program, 'specularColor') as number;
-    this.bumpLoc = gl.getUniformLocation(shader.program, 'bump') as number;
-    this.mapStatusLoc = gl.getUniformLocation(shader.program, 'mapStatus') as number;
+    this.mapKdLoc = gl.getUniformLocation(shader.program, 'map_Kd') as number;
+    this.mapKsLoc = gl.getUniformLocation(shader.program, 'map_Ks') as number;
+    this.mapBumpLoc = gl.getUniformLocation(shader.program, 'map_Bump') as number;
+    this.mapFlagsLoc = gl.getUniformLocation(shader.program, 'mapFlags') as number;
   }
 
   // Apply materials
@@ -272,7 +274,7 @@ class Model {
     const gl = this.gl;
     const material = this.materials[mIndex];
 
-    let mapStatus = 0;
+    let mapFlags = 0;
 
     gl.uniform3fv(this.kaLoc, material.Ka);
     gl.uniform3fv(this.kdLoc, material.Kd);
@@ -281,25 +283,25 @@ class Model {
     gl.uniform1i(this.illumLoc, material.illum);
 
     if (material.map_Kd) {
-      material.map_Kd.setup(this.diffuseColorLoc);
-      mapStatus = mapStatus | (1 << 2);
+      material.map_Kd.setup(this.mapKdLoc);
+      mapFlags = mapFlags | (1 << 2);
     } else {
-      mapStatus = mapStatus & ~(1 << 2);
+      mapFlags = mapFlags & ~(1 << 2);
     }
     if (material.map_Ks) {
-      material.map_Ks.setup(this.specularColorLoc);
-      mapStatus = mapStatus | (1 << 3);
+      material.map_Ks.setup(this.mapKsLoc);
+      mapFlags = mapFlags | (1 << 3);
     } else {
-      mapStatus = mapStatus & ~(1 << 3);
+      mapFlags = mapFlags & ~(1 << 3);
     }
     if (material.map_Bump) {
-      material.map_Bump.setup(this.bumpLoc);
-      mapStatus = mapStatus | (1 << 4);
+      material.map_Bump.setup(this.mapBumpLoc);
+      mapFlags = mapFlags | (1 << 4);
     } else {
-      mapStatus = mapStatus & ~(1 << 4);
+      mapFlags = mapFlags & ~(1 << 4);
     }
 
-    gl.uniform1i(this.mapStatusLoc, mapStatus);
+    gl.uniform1i(this.mapFlagsLoc, mapFlags);
   }
 
   public draw() {
