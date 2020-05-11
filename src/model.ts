@@ -1,5 +1,5 @@
-import Shader from './shader';
 import Mesh from './mesh';
+import Shader from './shader';
 import Texture from './texture';
 
 function parseOBJ(objSource: string) {
@@ -13,16 +13,10 @@ function parseOBJ(objSource: string) {
   let mtlstops: string[] = [''];
 
   let lines = objSource.split(/\r?\n/);
-  const total = lines.length;
-  let progress = 0;
 
   // 去掉注释和空行
   lines = lines.filter((line) => line && !/^\s*#/.test(line));
   lines.forEach((line) => {
-    progress++;
-
-    console.log(`model processing: ${progress}/${total}`);
-
     const [cmd, ...elements] = line.trim().split(/\s+/);
     switch (cmd) {
       case 'v':
@@ -201,6 +195,8 @@ class Model {
 
   public async load() {
     console.log('load model begin...');
+    console.time('cost');
+
     const baseURL = this.modelUrl.replace(/[^/]+$/, '');
     const res = await fetch(this.modelUrl);
     const text = await res.text();
@@ -243,9 +239,8 @@ class Model {
       this.mIndices.push(mIndex);
     }
 
-    console.log(this.materials);
-
     console.log('load model finished...');
+    console.timeEnd('cost');
   }
 
   public setup(shader: Shader) {
