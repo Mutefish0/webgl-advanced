@@ -12,8 +12,9 @@
     "isolatedModules": false,
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "strict": true
+    "strict": true,
+    "outDir": "dist"
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
-  "exclude": ["node_modules/"]
+  "exclude": ["node_modules/", "src/lib/"]
 }

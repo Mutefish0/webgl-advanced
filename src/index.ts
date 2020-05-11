@@ -1,15 +1,14 @@
-import {mat4, quat, vec3} from 'gl-matrix';
+import { mat4, quat, vec3 } from 'gl-matrix';
 
 import Model from './model';
 import Shader from './shader';
-import {getWebGLContext} from './util';
+import { getWebGLContext } from './util';
 
 const gl = getWebGLContext('#canv');
 
 const tutorial = location.search.slice(-1) || 1;
 
-const shader = new Shader(
-    gl, `/shaders/${tutorial}/index.vs`, `/shaders/${tutorial}/index.fs`);
+const shader = new Shader(gl, `/shaders/${tutorial}/index.vs`, `/shaders/${tutorial}/index.fs`);
 const model = new Model(gl, `/models/${tutorial}/index.obj`);
 
 Promise.all([shader.load(), model.load()]).then(() => {
@@ -51,7 +50,7 @@ Promise.all([shader.load(), model.load()]).then(() => {
     // 先填充背景
     gl.clearColor(0.2745, 0.2745, 0.2745, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    // 画一个立方体
+
     model.draw();
     frameCount += 1;
     window.requestAnimationFrame(frameStep);
@@ -80,59 +79,56 @@ Promise.all([shader.load(), model.load()]).then(() => {
     }
   });
 
-  canvasEl ?.addEventListener('mousemove', (e) => {
-              if (isControlled) {
-                pBuffer.push([e.offsetX, e.offsetY]);
+  canvasEl?.addEventListener('mousemove', (e) => {
+    if (isControlled) {
+      pBuffer.push([e.offsetX, e.offsetY]);
 
-                if (pBuffer.length >= bufferSize) {
-                  let dx = pBuffer[pBuffer.length - 1][0] - pBuffer[0][0];
-                  let dy = pBuffer[pBuffer.length - 1][1] - pBuffer[0][1];
+      if (pBuffer.length >= bufferSize) {
+        let dx = pBuffer[pBuffer.length - 1][0] - pBuffer[0][0];
+        let dy = pBuffer[pBuffer.length - 1][1] - pBuffer[0][1];
 
-                  const v = vec3.fromValues(dx, -dy, 0);
-                  const norm = vec3.fromValues(dy, dx, 0);
-                  const rqMatrix = mat4.create();
+        const v = vec3.fromValues(dx, -dy, 0);
+        const norm = vec3.fromValues(dy, dx, 0);
+        const rqMatrix = mat4.create();
 
-                  vec3.transformMat4(
-                      norm, norm, mat4.invert(rqMatrix, qMatrix));
-                  vec3.normalize(norm, norm);
+        vec3.transformMat4(norm, norm, mat4.invert(rqMatrix, qMatrix));
+        vec3.normalize(norm, norm);
 
-                  const signVec = vec3.create();
-                  vec3.cross(signVec, v, norm);
+        const signVec = vec3.create();
+        vec3.cross(signVec, v, norm);
 
-                  const sign = signVec[2] > 0 ? 1 : -1;
+        const sign = signVec[2] > 0 ? 1 : -1;
 
-                  const distance = vec3.len(v);
-                  const tempq = quat.create();
-                  const tempMat = mat4.create();
+        const distance = vec3.len(v);
+        const tempq = quat.create();
+        const tempMat = mat4.create();
 
-                  quat.setAxisAngle(
-                      tempq, norm, sign * (distance / 400) * 2 * Math.PI);
-                  mat4.fromQuat(tempMat, tempq);
+        quat.setAxisAngle(tempq, norm, sign * (distance / 400) * 2 * Math.PI);
+        mat4.fromQuat(tempMat, tempq);
 
-                  mat4.multiply(qMatrix, qMatrix, tempMat);
+        mat4.multiply(qMatrix, qMatrix, tempMat);
 
-                  shader.model(
-                      mat4.multiply(finalModelMatrix, modelMatrix, qMatrix));
+        shader.model(mat4.multiply(finalModelMatrix, modelMatrix, qMatrix));
 
-                  pBuffer = [];
-                }
-              } else if (isShifted) {
-                pBuffer.push([e.offsetX, e.offsetY]);
-                if (pBuffer.length >= bufferSize) {
-                  let dx = pBuffer[pBuffer.length - 1][0] - pBuffer[0][0];
-                  let dy = pBuffer[pBuffer.length - 1][1] - pBuffer[0][1];
+        pBuffer = [];
+      }
+    } else if (isShifted) {
+      pBuffer.push([e.offsetX, e.offsetY]);
+      if (pBuffer.length >= bufferSize) {
+        let dx = pBuffer[pBuffer.length - 1][0] - pBuffer[0][0];
+        let dy = pBuffer[pBuffer.length - 1][1] - pBuffer[0][1];
 
-                  if (Math.abs(dx) < Math.abs(dy)) {
-                    dx = dy;
-                  }
+        if (Math.abs(dx) < Math.abs(dy)) {
+          dx = dy;
+        }
 
-                  mat4.translate(viewMatrix, viewMatrix, [0, 0, dx / 30]);
-                  shader.view(viewMatrix);
+        mat4.translate(viewMatrix, viewMatrix, [0, 0, dx / 30]);
+        shader.view(viewMatrix);
 
-                  pBuffer = [];
-                }
-              }
-            });
+        pBuffer = [];
+      }
+    }
+  });
 
-  window.requestAnimationFrame(frameStep);
+  frameStep();
 });

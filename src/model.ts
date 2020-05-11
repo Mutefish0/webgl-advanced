@@ -1,98 +1,7 @@
+import getObjLoader from 'src/lib/objloader';
+
 import Shader from './shader';
-import Mesh from './mesh';
 import Texture from './texture';
-
-function parseOBJ(objSource: string) {
-  const positions: Vec3[] = [];
-  const texCoords: Vec2[] = [];
-  const normals: Vec3[] = [];
-
-  let indicesGroup: number[][] = [[]];
-  let vertices: number[] = [];
-  let mtllibs: string[] = [];
-  let mtlstops: string[] = [''];
-
-  let lines = objSource.split(/\r?\n/);
-  const total = lines.length;
-  let progress = 0;
-
-  // 去掉注释和空行
-  lines = lines.filter((line) => line && !/^\s*#/.test(line));
-  lines.forEach((line) => {
-    progress++;
-
-    console.log(`model processing: ${progress}/${total}`);
-
-    const [cmd, ...elements] = line.trim().split(/\s+/);
-    switch (cmd) {
-      case 'v':
-        positions.push([Number(elements[0]), Number(elements[1]), Number(elements[2])]);
-        break;
-      case 'vt':
-        texCoords.push([Number(elements[0]), Number(elements[1])]);
-        break;
-      case 'vn':
-        normals.push([Number(elements[0]), Number(elements[1]), Number(elements[2])]);
-        break;
-      case 'f':
-        const currentIndex = vertices.length / 8;
-        let addedIndices: number[] = [];
-        for (let element of elements) {
-          const [v, vt, vn] = element.split('/');
-          const pos = positions[parseInt(v) - 1];
-          const texCoord = texCoords[parseInt(vt) - 1] || [0, 0];
-          const normal = normals[parseInt(vn) - 1] || [0, 0, 0];
-          vertices = vertices.concat([
-            pos[0],
-            pos[1],
-            pos[2],
-            texCoord[0],
-            texCoord[1],
-            normal[0],
-            normal[1],
-            normal[2],
-          ]);
-        }
-        if (elements.length === 3) {
-          addedIndices = [currentIndex, currentIndex + 1, currentIndex + 2];
-        } else if (elements.length === 4) {
-          addedIndices = [
-            currentIndex,
-            currentIndex + 1,
-            currentIndex + 2,
-            currentIndex + 2,
-            currentIndex + 3,
-            currentIndex,
-          ];
-        } else if (elements.length > 4) {
-          for (let i = 2; i < elements.length; i++) {
-            addedIndices = addedIndices.concat([
-              currentIndex,
-              currentIndex + i - 1,
-              currentIndex + i,
-            ]);
-          }
-        }
-        indicesGroup[indicesGroup.length - 1] = indicesGroup[indicesGroup.length - 1].concat(
-          addedIndices
-        );
-        break;
-      case 'mtllib':
-        mtllibs.push(elements[0]);
-        break;
-      case 'usemtl':
-        mtlstops.push(elements[0]);
-        indicesGroup.push([]);
-    }
-  });
-
-  if (indicesGroup[0].length === 0) {
-    indicesGroup = indicesGroup.slice(1);
-    mtlstops = mtlstops.slice(1);
-  }
-
-  return { vertices, indicesGroup, mtllibs, mtlstops };
-}
 
 interface Material {
   name: string;
@@ -135,13 +44,16 @@ function parseMTL(mltSource: string) {
         });
         break;
       case 'Ka':
-        currentMaterial.Ka = [Number(elements[0]), Number(elements[1]), Number(elements[2])];
+        currentMaterial.Ka =
+            [Number(elements[0]), Number(elements[1]), Number(elements[2])];
         break;
       case 'Kd':
-        currentMaterial.Kd = [Number(elements[0]), Number(elements[1]), Number(elements[2])];
+        currentMaterial.Kd =
+            [Number(elements[0]), Number(elements[1]), Number(elements[2])];
         break;
       case 'Ks':
-        currentMaterial.Ks = [Number(elements[0]), Number(elements[1]), Number(elements[2])];
+        currentMaterial.Ks =
+            [Number(elements[0]), Number(elements[1]), Number(elements[2])];
         break;
       case 'Ns':
         currentMaterial.Ns = Number(elements[0]);
@@ -169,15 +81,18 @@ function parseMTL(mltSource: string) {
   return materials;
 }
 
+interface Mesh {
+  startIndex: number;
+  endIndex: number;
+  materialIndex: number;
+}
+
 class Model {
   private gl: WebGL2RenderingContext;
   private modelUrl: string;
-  private vertices: number[];
-  private indicesGroups: number[][];
-  private mIndices: number[];
-  private attributes: Attribute[];
   private materials: Material[];
-  private mesh?: Mesh;
+  private meshs: Mesh[];
+  private vertices: Float32Array;
 
   private kaLoc: number = 0;
   private kdLoc: number = 0;
@@ -192,27 +107,22 @@ class Model {
   constructor(gl: WebGL2RenderingContext, modelUrl: string) {
     this.gl = gl;
     this.modelUrl = modelUrl;
-    this.vertices = [];
-    this.indicesGroups = [];
-    this.mIndices = [];
-    this.attributes = [];
     this.materials = [];
+    this.meshs = [];
+    this.vertices = new Float32Array();
   }
 
   public async load() {
     console.log('load model begin...');
+    console.time('cost');
+
     const baseURL = this.modelUrl.replace(/[^/]+$/, '');
     const res = await fetch(this.modelUrl);
     const text = await res.text();
-    const { vertices, indicesGroup, mtllibs, mtlstops } = parseOBJ(text);
+    const loader = await getObjLoader();
+    const {vertices, mtllibs, mtlstops} = loader.parseOBJ(text);
 
-    this.vertices = vertices;
-    this.indicesGroups = indicesGroup;
-    this.attributes = [
-      { name: 'a_Pos', size: 3, stride: 8, offset: 0 },
-      { name: 'a_TexCoord', size: 2, stride: 8, offset: 3 },
-      { name: 'a_Norm', size: 3, stride: 8, offset: 5 },
-    ];
+    const numVertices = vertices.length / 8;
 
     for (let mtllib of mtllibs) {
       const res = await fetch(`${baseURL}${mtllib}`);
@@ -223,36 +133,73 @@ class Model {
     const textureLoadPromises = [];
     for (let material of this.materials) {
       if (material.map_Kd_URI) {
-        material.map_Kd = new Texture(this.gl, `${baseURL}${material.map_Kd_URI}`);
+        material.map_Kd =
+            new Texture(this.gl, `${baseURL}${material.map_Kd_URI}`);
         textureLoadPromises.push(material.map_Kd.load());
       }
       if (material.map_Ks_URI) {
-        material.map_Ks = new Texture(this.gl, `${baseURL}${material.map_Ks_URI}`);
+        material.map_Ks =
+            new Texture(this.gl, `${baseURL}${material.map_Ks_URI}`);
         textureLoadPromises.push(material.map_Ks.load());
       }
       if (material.map_Bump_URI) {
-        material.map_Bump = new Texture(this.gl, `${baseURL}${material.map_Bump_URI}`);
+        material.map_Bump =
+            new Texture(this.gl, `${baseURL}${material.map_Bump_URI}`);
         textureLoadPromises.push(material.map_Bump.load());
       }
     }
     // 等待纹理加载完成
     await Promise.all(textureLoadPromises);
 
+    this.vertices = vertices;
+    this.meshs = [{startIndex: 0, endIndex: numVertices, materialIndex: -1}];
     for (let stop of mtlstops) {
-      const mIndex = this.materials.findIndex((m) => m.name === stop);
-      this.mIndices.push(mIndex);
+      const lastMesh = this.meshs[this.meshs.length - 1];
+      const mIndex = this.materials.findIndex((m) => m.name === stop.material);
+
+      if (stop.index === lastMesh.startIndex) {
+        lastMesh.materialIndex = mIndex;
+      } else if (
+          stop.index > lastMesh.startIndex && stop.index < lastMesh.endIndex) {
+        this.meshs.pop();
+        this.meshs.push({
+          startIndex: lastMesh.startIndex,
+          endIndex: stop.index,
+          materialIndex: lastMesh.materialIndex,
+        });
+        this.meshs.push({
+          startIndex: stop.index,
+          endIndex: lastMesh.endIndex,
+          materialIndex: mIndex,
+        });
+      }
     }
 
-    console.log(this.materials);
-
     console.log('load model finished...');
+    console.log('vertex count: ', vertices.length);
+    console.timeEnd('cost');
   }
 
   public setup(shader: Shader) {
     const gl = shader.gl;
 
-    this.mesh = new Mesh(gl, this.vertices, this.attributes);
-    this.mesh.setup(shader);
+    const vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.vertices, gl.STATIC_DRAW);
+
+    const attributes = [
+      {name: 'a_Pos', size: 3, stride: 8, offset: 0},
+      {name: 'a_TexCoord', size: 2, stride: 8, offset: 3},
+      {name: 'a_Norm', size: 3, stride: 8, offset: 5},
+    ];
+
+    for (let attr of attributes) {
+      const attrLoc = gl.getAttribLocation(shader.program, attr.name);
+      gl.vertexAttribPointer(
+          attrLoc, attr.size, gl.FLOAT, false, 4 * attr.stride,
+          4 * attr.offset);
+      gl.enableVertexAttribArray(attrLoc);
+    }
 
     this.kaLoc = gl.getUniformLocation(shader.program, 'Ka') as number;
     this.kdLoc = gl.getUniformLocation(shader.program, 'Kd') as number;
@@ -261,8 +208,10 @@ class Model {
     this.illumLoc = gl.getUniformLocation(shader.program, 'illum') as number;
     this.mapKdLoc = gl.getUniformLocation(shader.program, 'map_Kd') as number;
     this.mapKsLoc = gl.getUniformLocation(shader.program, 'map_Ks') as number;
-    this.mapBumpLoc = gl.getUniformLocation(shader.program, 'map_Bump') as number;
-    this.mapFlagsLoc = gl.getUniformLocation(shader.program, 'mapFlags') as number;
+    this.mapBumpLoc =
+        gl.getUniformLocation(shader.program, 'map_Bump') as number;
+    this.mapFlagsLoc =
+        gl.getUniformLocation(shader.program, 'mapFlags') as number;
   }
 
   // Apply materials
@@ -305,12 +254,11 @@ class Model {
   }
 
   public draw() {
-    if (this.mesh) {
-      const mesh = this.mesh as Mesh;
-      this.indicesGroups.forEach((indices, index) => {
-        this.applyMaterial(this.mIndices[index]);
-        mesh.drawWithIndices(indices);
-      });
+    const gl = this.gl;
+    for (let mesh of this.meshs) {
+      this.applyMaterial(mesh.materialIndex);
+      gl.drawArrays(
+          gl.TRIANGLES, mesh.startIndex, mesh.endIndex - mesh.startIndex);
     }
   }
 }
